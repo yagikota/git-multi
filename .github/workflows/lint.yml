@@ -1,4 +1,4 @@
-name: test_and_lint
+name: lint
 
 on:
   pull_request:
@@ -7,15 +7,22 @@ on:
       - reopened
       - synchronize
       - ready_for_review
-
+permissions:
+  contents: read
 jobs:
-  lint:
-    if: github.event.pull_request.draft == false
-    name: Lint
+  golangci-lint:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+          cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.29
+          version: latest
+          args: --disable-all --enable=goimports --enable=golint --enable=govet --timeout=10m
