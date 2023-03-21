@@ -74,6 +74,7 @@ func MultiClone(repoSSHURLs []string) {
 		fmt.Printf("%s ...\n", url)
 	}
 
+	// TODO:
 	maxGoroutines := 10
 	ch := make(chan Response, maxGoroutines)
 	wg := new(sync.WaitGroup)
@@ -103,6 +104,7 @@ func MultiClone(repoSSHURLs []string) {
 		}
 	}
 
+	// print result
 	fmt.Println(strings.Repeat("=", 100))
 	if clonedReposNum == totalReposNum {
 		fmt.Printf("==> All repositories have successfully cloned (%d/%d)", clonedReposNum, totalReposNum)
