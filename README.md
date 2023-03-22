@@ -35,7 +35,7 @@ https://github.com/beego/beego (3/3)
 ==> (3/3) success
 All 3 repositories are successfully cloned
 ```
-
+maxgoroutine: The number of goroutine should be set accordingly.
 
 ### License
 MIT
