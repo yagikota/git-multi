@@ -1,7 +1,6 @@
 package multiclone
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -16,12 +15,6 @@ const (
 	gitHubSSHPrefix = "git@github.com:"
 	gitHubSSHSuffix = ".git"
 )
-
-type Response struct {
-	RepoURL        string
-	ClonedReposNum int
-	Error          error
-}
 
 // https://docs.github.com/en/get-started/getting-started-with-git/about-remote-repositories#about-remote-repositories
 func isSSHURL(repoURL string) bool {
@@ -42,41 +35,31 @@ func repoHTTPSURLFromSSHURL(repoURL string) (string, error) {
 	return url, nil
 }
 
-func gitClone(repoSSHURL string, ch chan<- Response, clonedReposNum *int32) {
-	var res Response
+func gitClone(repoSSHURL string, ch chan<- *Result, clonedReposNum *int32) {
+	result := NewResult()
 	repoHTTPSURL, err := repoHTTPSURLFromSSHURL(repoSSHURL)
-	res.RepoURL = repoHTTPSURL
+	result.RepoURL = repoHTTPSURL
 	if err != nil {
-		res.Error = err
-		ch <- res
+		result.Error = err
+		ch <- result
 		return
 	}
 	cmd := exec.Command("git", "clone", repoSSHURL)
 	if stderr, err := cmd.CombinedOutput(); err != nil {
-		res.Error = errors.New(string(stderr))
+		result.Error = errors.New(string(stderr))
 	} else {
 		atomic.AddInt32(clonedReposNum, 1)
 	}
-	res.ClonedReposNum = int(*clonedReposNum)
-	ch <- res
+	result.ClonedReposNum = int(*clonedReposNum)
+	ch <- result
 }
 
-func MultiClone(repoSSHURLs []string) {
-	totalReposNum := int32(len(repoSSHURLs))
-	repoHTTPSURLs := make([]string, totalReposNum)
-	fmt.Printf("==> Cloning %d repositories:\n", totalReposNum)
-	for i, repoURL := range repoSSHURLs {
-		url, err := repoHTTPSURLFromSSHURL(repoURL)
-		if err != nil {
-			continue
-		}
-		repoHTTPSURLs[i] = url
-		fmt.Printf("%s ...\n", url)
-	}
+func MultiClone(repoSSHURLs []string, maxGoroutine int) {
+	handler := NewMultiCloneHandler(repoSSHURLs, maxGoroutine)
+	fmt.Printf("==> Cloning %d repositories:\n", handler.TotalReposNum())
+	handler.PrintRepoSSHURLs()
 
-	// TODO:
-	maxGoroutines := 10
-	ch := make(chan Response, maxGoroutines)
+	ch := make(chan *Result, maxGoroutine)
 	wg := new(sync.WaitGroup)
 	var clonedReposNum int32
 	for _, repoSSHURL := range repoSSHURLs {
@@ -94,35 +77,17 @@ func MultiClone(repoSSHURLs []string) {
 		wg.Wait()
 	}()
 
-	var buffer bytes.Buffer
-	for res := range ch {
-		if err := res.Error; err != nil {
+	for result := range ch {
+		if err := result.Error; err != nil {
 			// store in buffer and display at the end
-			fmt.Fprintf(&buffer, res.RepoURL+"\n")
+			fmt.Fprintf(handler.Buffer(), result.RepoURL+"\n")
 		} else {
-			fmt.Printf("%s (%d/%d)\n", res.RepoURL, res.ClonedReposNum, totalReposNum)
+			// on progress result
+			result.PrintOnProgressResult(handler.TotalReposNum())
 		}
 	}
 
-	// print result
+	// final result
 	fmt.Println(strings.Repeat("=", 100))
-	if clonedReposNum == totalReposNum {
-		fmt.Printf("==> All repositories have successfully cloned (%d/%d)", clonedReposNum, totalReposNum)
-		return
-	}
-	if clonedReposNum > 1 {
-		fmt.Printf("==> some repositories have successfully cloned (%d/%d)\n", clonedReposNum, totalReposNum)
-		return
-	}
-	if clonedReposNum == 1 {
-		fmt.Printf("==> one repository has successfully cloned (%d/%d)\n", clonedReposNum, totalReposNum)
-		return
-	}
-	fmt.Printf("==> (%d/%d) repositories are successfully cloned.\n", clonedReposNum, totalReposNum)
-	if buffer.Len() > 0 {
-		fmt.Println("following repositories are not cloned:")
-		fmt.Println(buffer.String())
-	} else {
-		fmt.Printf("All %d repositories are successfully cloned", totalReposNum)
-	}
+	handler.printFinalResult(int(clonedReposNum))
 }
